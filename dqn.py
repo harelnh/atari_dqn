@@ -43,7 +43,7 @@ epsilon_decay = 500
 
 epsilon_by_frame = lambda frame_idx: epsilon_final + (epsilon_start - epsilon_final) * math.exp(
     -1. * frame_idx / epsilon_decay)
-plt.plot([epsilon_by_frame(i) for i in range(10000)])
+# plt.plot([epsilon_by_frame(i) for i in range(10000)])
 
 
 class DQN(nn.Module):
@@ -105,8 +105,6 @@ def compute_td_loss(batch_size):
     optimizer.step()
 
     return loss
-
-
 
 
 def plot(frame_idx, rewards, losses):
@@ -214,10 +212,11 @@ replay_buffer = ReplayBuffer(100000)
 epsilon_start = 1.0
 epsilon_final = 0.01
 epsilon_decay = 30000
+print_reward_freq = 10 # in episodes
 
 epsilon_by_frame = lambda frame_idx: epsilon_final + (epsilon_start - epsilon_final) * math.exp(
     -1. * frame_idx / epsilon_decay)
-plt.plot([epsilon_by_frame(i) for i in range(1000000)])
+# plt.plot([epsilon_by_frame(i) for i in range(1000000)])
 
 num_frames = 1400000
 batch_size = 32
@@ -226,7 +225,6 @@ gamma = 0.99
 losses = []
 all_rewards = []
 episode_reward = 0
-
 state = env.reset()
 for frame_idx in range(1, num_frames + 1):
     epsilon = epsilon_by_frame(frame_idx)
@@ -235,19 +233,27 @@ for frame_idx in range(1, num_frames + 1):
     next_state, reward, done, _ = env.step(action)
     replay_buffer.push(state, action, reward, next_state, done)
 
+    # plt.imshow(next_state[0][:][:])
+    plt.show()
+    # env.render()
     state = next_state
     episode_reward += reward
 
     if done:
         state = env.reset()
         all_rewards.append(episode_reward)
+
+        if len(all_rewards) % print_reward_freq == 0:
+            print('episode number ' + str(len(all_rewards)) + ' episode reward: ' + str(episode_reward))
+
         episode_reward = 0
 
     if len(replay_buffer) > replay_initial:
         loss = compute_td_loss(batch_size)
         # losses.append(loss.data[0]) # orig
-        losses.append(loss.data[0]) # omri & harel
+        losses.append(loss.item()) # omri & harel
 
-    if frame_idx % 2000 == 0:
-        plot(frame_idx, all_rewards, losses)
+    if frame_idx % 10000 == 0:
+        print('step number: ' + str(frame_idx) )
+        # plot(frame_idx, all_rewards, losses)
 
