@@ -2,7 +2,7 @@ import math, random
 
 import gym
 import numpy as np
-
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -35,52 +35,7 @@ class ReplayBuffer(object):
         return len(self.buffer)
 
 
-env_id = "CartPole-v0"
-env = gym.make(env_id)
-epsilon_start = 1.0
-epsilon_final = 0.01
-epsilon_decay = 500
 
-epsilon_by_frame = lambda frame_idx: epsilon_final + (epsilon_start - epsilon_final) * math.exp(
-    -1. * frame_idx / epsilon_decay)
-# plt.plot([epsilon_by_frame(i) for i in range(10000)])
-
-
-class DQN(nn.Module):
-    def __init__(self, num_inputs, num_actions):
-        super(DQN, self).__init__()
-
-        self.layers = nn.Sequential(
-            nn.Linear(env.observation_space.shape[0], 128),
-            nn.ReLU(),
-            nn.Linear(128, 128),
-            nn.ReLU(),
-            nn.Linear(128, env.action_space.n)
-        )
-
-    def forward(self, x):
-        return self.layers(x)
-
-    def act(self, state, epsilon):
-        if random.random() > epsilon:
-            with torch.no_grad():
-                state = Variable(torch.FloatTensor(state).unsqueeze(0))
-                q_value = self.forward(state)
-                # action = q_value.max(1)[1].data[0] # orig
-                action = q_value.max(1)[1].data[0].item() # harel & omri
-        else:
-            action = random.randrange(env.action_space.n)
-        return action
-
-
-model = DQN(env.observation_space.shape[0], env.action_space.n)
-
-if USE_CUDA:
-    model = model.cuda()
-
-optimizer = optim.Adam(model.parameters())
-
-replay_buffer = ReplayBuffer(1000)
 
 def compute_td_loss(batch_size):
     state, action, reward, next_state, done = replay_buffer.sample(batch_size)
@@ -106,50 +61,6 @@ def compute_td_loss(batch_size):
 
     return loss
 
-
-def plot(frame_idx, rewards, losses):
-    clear_output(True)
-    plt.figure(figsize=(20, 5))
-    plt.subplot(131)
-    plt.title('frame %s. reward: %s' % (frame_idx, np.mean(rewards[-10:])))
-    plt.plot(rewards)
-    plt.subplot(132)
-    plt.title('loss')
-    plt.plot(losses)
-    plt.show()
-
-if False:
-    num_frames = 10000
-    batch_size = 32
-    gamma = 0.99
-
-    losses = []
-    all_rewards = []
-    episode_reward = 0
-
-    state = env.reset()
-    for frame_idx in range(1, num_frames + 1):
-        epsilon = epsilon_by_frame(frame_idx)
-        action = model.act(state, epsilon)
-
-        next_state, reward, done, _ = env.step(action)
-        replay_buffer.push(state, action, reward, next_state, done)
-
-        state = next_state
-        episode_reward += reward
-
-        if done:
-            state = env.reset()
-            all_rewards.append(episode_reward)
-            episode_reward = 0
-
-        if len(replay_buffer) > batch_size:
-            loss = compute_td_loss(batch_size)
-            # losses.append(loss.data[0])   # orig
-            losses.append(loss.item())  # harel & omri
-
-        if frame_idx % 200 == 0:
-            plot(frame_idx, all_rewards, losses)
 
 from common.wrappers import make_atari, wrap_deepmind, wrap_pytorch
 
@@ -212,11 +123,16 @@ replay_buffer = ReplayBuffer(100000)
 epsilon_start = 1.0
 epsilon_final = 0.01
 epsilon_decay = 30000
-print_reward_freq = 10 # in episodes
+print_reward_freq = 50 # in episodes
+flickering_p = 0
 
 epsilon_by_frame = lambda frame_idx: epsilon_final + (epsilon_start - epsilon_final) * math.exp(
     -1. * frame_idx / epsilon_decay)
-# plt.plot([epsilon_by_frame(i) for i in range(1000000)])
+
+def decision(probability):
+    return random.random() < probability
+
+
 
 num_frames = 1400000
 batch_size = 32
@@ -226,11 +142,22 @@ losses = []
 all_rewards = []
 episode_reward = 0
 state = env.reset()
+
+# output_dir = os.path.abspath('experiments')
+output_path =  'flickering_p_' + str(flickering_p) + '.txt'
+f = open(output_path, 'w+')
+
 for frame_idx in range(1, num_frames + 1):
     epsilon = epsilon_by_frame(frame_idx)
     action = model.act(state, epsilon)
 
     next_state, reward, done, _ = env.step(action)
+
+    if decision(flickering_p):
+        next_state = np.zeros(next_state.shape)
+        reward = 0
+        done = 0
+
     replay_buffer.push(state, action, reward, next_state, done)
 
     # plt.imshow(next_state[0][:][:])
@@ -244,7 +171,8 @@ for frame_idx in range(1, num_frames + 1):
         all_rewards.append(episode_reward)
 
         if len(all_rewards) % print_reward_freq == 0:
-            print('episode number ' + str(len(all_rewards)) + ' episode reward: ' + str(episode_reward))
+            print('Step: ' + str(len(frame_idx)) + ' Avg reward: ' + str(all_rewards[-3:]/3))
+            f.write('Step: ' + str(len(frame_idx)) + ' Avg reward: ' + str(all_rewards[-3:]/3) + '\n')
 
         episode_reward = 0
 
@@ -257,3 +185,4 @@ for frame_idx in range(1, num_frames + 1):
         print('step number: ' + str(frame_idx) )
         # plot(frame_idx, all_rewards, losses)
 
+f.close()
